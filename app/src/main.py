@@ -11,10 +11,10 @@ import streamlit as st
 from src.recommender import (
     build_best_schedule,
     build_recommendations,
-    compute_interest_embedding,
     compute_session_embeddings,
+    compute_topic_embeddings,
     load_model,
-    rank_sessions,
+    rank_sessions_by_topic,
 )
 
 from src.visualizer import (
@@ -96,17 +96,25 @@ def run_semantic_search(
 
     model = get_model()
 
-    interest_embedding = (
-        compute_interest_embedding(
-            model,
-            query,
-        )
+    topics = [
+        line.strip()
+        for line in query.splitlines()
+        if line.strip()
+    ]
+
+    if not topics:
+        topics = [query.strip()]
+
+    topics, topic_embeddings = compute_topic_embeddings(
+        model,
+        topics,
     )
 
-    ranked_df = rank_sessions(
+    ranked_df = rank_sessions_by_topic(
         df=df,
         session_embeddings=embeddings,
-        interest_embedding=interest_embedding,
+        topics=topics,
+        topic_embeddings=topic_embeddings,
     )
 
     ranked_df = ranked_df.rename(
