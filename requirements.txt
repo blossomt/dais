@@ -6,3 +6,4 @@ scikit-learn
 numpy
 streamlit
 pip-system-certs
+torchvision

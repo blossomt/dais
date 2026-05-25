@@ -207,18 +207,11 @@ def build_best_schedule(
              "semantic_score",
             ascending=False,
          )
-         .groupby(
-             [
-                 "starts_pst",
-             ]
-         )
-         .head(1)
          .sort_values("starts_pst")
          .copy()
       )
 
     return best_per_slot
-
 
 # ============================================================
 # CONFLICTS
