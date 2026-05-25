@@ -68,9 +68,9 @@ df = parse_agenda(
 print(f"Loaded {len(df)} sessions")
 
 df.sort_values(
-     "starts_pst"
+    "starts_pst"
 ).to_csv(
-     "./data/agenda.csv",
+    "./data/agenda.csv",
     index=False,
 )
 
@@ -194,7 +194,14 @@ recommendations[[
     index=False,
 )
 
-best_per_slot.to_csv(
+best_per_slot[[
+            "nid",
+            "title",
+            "day",
+            "timeslot",
+            "interest_topic",
+            "semantic_score",
+        ]].to_csv(
     OUTPUT_DIR / "best_schedule.csv",
     index=False,
 )
@@ -219,13 +226,13 @@ personal_schedule_fig = (
 save_plotly_html(
     recommendation_fig,
     OUTPUT_DIR
-     / "recommendation_timeline.html",
+    / "recommendation_timeline.html",
 )
 
 save_plotly_html(
     personal_schedule_fig,
     OUTPUT_DIR
-     / "personal_schedule_timeline.html",
+    / "personal_schedule_timeline.html",
 )
 
 print("\nSaved outputs to ./output/")

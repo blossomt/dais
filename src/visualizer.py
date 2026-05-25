@@ -23,20 +23,32 @@ def create_recommendation_timeline(
     recommendations: pd.DataFrame,
 ):
 
+    category_col = (
+        "interest_topic"
+        if "interest_topic" in recommendations.columns
+        else "track"
+    )
+
+    hover_fields = [
+        "title",
+        "level",
+        "type",
+        "speakers",
+        "categories",
+        "semantic_score",
+    ]
+
+    if category_col not in hover_fields:
+        hover_fields.append(category_col)
+
     fig = px.timeline(
         recommendations,
         x_start="starts_pst",
         x_end="ends_pst",
-        y="track",
+        y=category_col,
         color="semantic_score",
-        hover_data=[
-            "title",
-            "level",
-            "type",
-            "speakers",
-            "categories",
-            "semantic_score",
-        ],
+        color_continuous_scale=px.colors.sequential.Blues,
+        hover_data=hover_fields,
     )
 
     fig.update_yaxes(
@@ -50,10 +62,10 @@ def create_recommendation_timeline(
         ),
         width=1800,
         height=600,
-        hoverlabel=dict(
-            bgcolor="white",
-            font_size=12,
-        ),
+        hoverlabel={
+            "bgcolor": "white",
+            "font_size": 12,
+        },
     )
 
     return fig
@@ -88,20 +100,25 @@ def create_personal_schedule_timeline(
         y="day",
         x_start="viz_start",
         x_end="viz_end",
-        color="track",
+        color="interest_topic",
+        color_discrete_sequence=px.colors.qualitative.Set2,
         hover_data={
             "title": True,
             "type": True,
             "speakers": True,
-            "viz_start": False,
-            "viz_end": False,
+            "interest_topic": "interest_topic" in viz_df.columns,
+            "viz_start": True,
+            "viz_end": True,
             "day": False,
             "semantic_score": False,
         },
+        opacity=0.7,
     )
 
     fig.update_traces(
         width=0.6,
+        marker_line_color="white",
+        marker_line_width=2,
     )
 
     fig.update_yaxes(
@@ -117,13 +134,13 @@ def create_personal_schedule_timeline(
     fig.update_layout(
         title="Optimized Personal Schedule",
         height=900,
-        bargap=0.25,
-        margin=dict(
-            l=80,
-            r=80,
-            t=80,
-            b=80,
-        ),
+        bargap=0.8,
+        margin={
+            "l": 80,
+            "r": 80,
+            "t": 80,
+            "b": 80,
+        },
         plot_bgcolor="white",
     )
 

@@ -1,24 +1,35 @@
 # app/src/main.py
 
 from pathlib import Path
+import hashlib
+import sys
 
-import html
+import numpy as np
 import re
 
 import pandas as pd
 import streamlit as st
 
-from src.recommender import (
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from src.agenda_parser import apply_filters  # noqa: E402
+from src.recommender import (  # noqa: E402
     build_best_schedule,
     build_recommendations,
     compute_session_embeddings,
     compute_topic_embeddings,
+    detect_conflicts,
     load_model,
     rank_sessions_by_topic,
 )
 
-from src.visualizer import (
+from src.visualizer import (  # noqa: E402
     create_personal_schedule_timeline,
+    create_recommendation_timeline,
 )
 
 # ============================================================
@@ -27,8 +38,38 @@ from src.visualizer import (
 
 DATA_PATH = Path("data/agenda.csv")
 
-TOP_K_SEARCH = 3
-TOP_K_SCHEDULE = 15
+CACHE_DIR = REPO_ROOT / ".cache"
+MODEL_CACHE_DIR = CACHE_DIR / "models"
+EMBEDDINGS_CACHE_DIR = CACHE_DIR / "embeddings"
+
+TOP_PER_SLOT = 3
+TOP_N_RECOMMENDATIONS = 15
+
+INCLUDE_LEVELS = [
+    "Beginner",
+    "Intermediate",
+    "Advanced",
+]
+
+EXCLUDE_TYPES = []
+
+DEFAULT_INTEREST_TOPICS = [
+    "geospatial analytics",
+    "deploying lakebase databricks apps",
+    "unity catalog data sharing"
+]
+
+
+def parse_topics_input(raw_input: str) -> list[str]:
+
+    if not raw_input:
+        return []
+
+    return [
+        topic.strip()
+        for topic in re.split(r"[\n,;]+", raw_input)
+        if topic.strip()
+    ]
 
 
 # ============================================================
@@ -63,13 +104,26 @@ def load_data() -> pd.DataFrame:
 @st.cache_resource
 def get_model():
 
-    return load_model()
+    MODEL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+    return load_model(cache_folder=MODEL_CACHE_DIR)
 
 
 @st.cache_resource
 def get_embeddings(
     searchable_texts: tuple,
 ):
+
+    EMBEDDINGS_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+    texts_hash = hashlib.md5(
+        "\n".join(searchable_texts).encode()
+    ).hexdigest()
+
+    cache_file = EMBEDDINGS_CACHE_DIR / f"{texts_hash}.npy"
+
+    if cache_file.exists():
+        return np.load(str(cache_file))
 
     model = get_model()
 
@@ -80,134 +134,9 @@ def get_embeddings(
         }),
     )
 
+    np.save(str(cache_file), embeddings)
+
     return embeddings
-
-
-# ============================================================
-# SEARCH
-# ============================================================
-
-def run_semantic_search(
-    df: pd.DataFrame,
-    query: str,
-    embeddings,
-    top_k: int,
-):
-
-    model = get_model()
-
-    topics = [
-        line.strip()
-        for line in query.splitlines()
-        if line.strip()
-    ]
-
-    if not topics:
-        topics = [query.strip()]
-
-    topics, topic_embeddings = compute_topic_embeddings(
-        model,
-        topics,
-    )
-
-    ranked_df = rank_sessions_by_topic(
-        df=df,
-        session_embeddings=embeddings,
-        topics=topics,
-        topic_embeddings=topic_embeddings,
-    )
-
-    ranked_df = ranked_df.rename(
-        columns={
-            "semantic_score": "score"
-        }
-    )
-
-    return ranked_df.head(top_k)
-
-
-def run_keyword_search(
-    df: pd.DataFrame,
-    query: str,
-    top_k: int,
-):
-
-    query = query.lower().strip()
-
-    results = df[
-        df["searchable_text"]
-        .fillna("")
-        .str.lower()
-        .str.contains(
-            query,
-            regex=False,
-        )
-    ].copy()
-
-    results["score"] = 1.0
-
-    return results.head(top_k)
-
-
-# ============================================================
-# DISPLAY HELPERS
-# ============================================================
-
-def prepare_display_table(
-    df: pd.DataFrame,
-) -> pd.DataFrame:
-
-    display_df = df.copy()
-
-    display_df["time"] = (
-        display_df["starts_pst"]
-        .dt.strftime("%a %H:%M")
-        + " - "
-        + display_df["ends_pst"]
-        .dt.strftime("%H:%M")
-    )
-
-    return display_df
-
-
-# ============================================================
-# HIGHLIGHTING
-# ============================================================
-
-def highlight_keywords(
-    text: str,
-    query: str,
-) -> str:
-
-    if not isinstance(text, str):
-        return ""
-
-    escaped_text = html.escape(text)
-
-    keywords = [
-        k.strip()
-        for k in query.split()
-        if k.strip()
-    ]
-
-    for keyword in keywords:
-
-        pattern = re.compile(
-            re.escape(keyword),
-            re.IGNORECASE,
-        )
-
-        escaped_text = pattern.sub(
-            lambda m: (
-                f'<span style="background-color:#ffe066;'
-                f'padding:0.1rem 0.2rem;'
-                f'border-radius:0.2rem;">'
-                f'{m.group(0)}</span>'
-            ),
-            escaped_text,
-        )
-
-    return escaped_text
 
 
 # ============================================================
@@ -225,283 +154,131 @@ st.title(
 
 st.markdown(
     """
-Search conference sessions using:
-- keyword matching
-- semantic similarity search
+Generate recommendations and a personal schedule
+using topic-based semantic ranking.
 """
 )
 
-query = st.text_input(
+topics_input = st.text_area(
     (
-        "Search for topics, tools, "
-        "or interests"
+        "Topics of interest "
+        "(one per line, or separated by commas/semicolons)"
     ),
-    placeholder=(
-        "lakebase geospatial analytics "
-        "pipeline development unity catalog"
-    ),
-)
-
-use_semantic_search = st.checkbox(
-    "Semantic search",
-    value=True,
+    value="\n".join(DEFAULT_INTEREST_TOPICS),
+    height=120,
 )
 
 df = load_data()
 
-embeddings = None
+topics = parse_topics_input(topics_input)
 
-if use_semantic_search:
+if topics:
 
-    embeddings = get_embeddings(
-        tuple(
-            df["searchable_text"]
-            .fillna("")
-            .tolist()
-        )
-    )
+    with st.spinner("Building recommendations..."):
 
-
-# ============================================================
-# SEARCH RESULTS
-# ============================================================
-
-if query:
-
-    with st.spinner(
-        "Searching sessions..."
-    ):
-
-        if use_semantic_search:
-
-            results = run_semantic_search(
-                df=df,
-                query=query,
-                embeddings=embeddings,
-                top_k=TOP_K_SEARCH,
-            )
-
-        else:
-
-            results = run_keyword_search(
-                df=df,
-                query=query,
-                top_k=TOP_K_SEARCH,
-            )
-
-    st.subheader(
-        "Top Matching Sessions"
-    )
-
-    if len(results) == 0:
-
-        st.warning(
-            "No matching sessions found."
+        filtered_df = apply_filters(
+            df=df,
+            include_levels=INCLUDE_LEVELS,
+            exclude_types=EXCLUDE_TYPES,
         )
 
-    else:
+        model = get_model()
 
-        display_df = prepare_display_table(
-            results
-        )
-
-        for _, row in display_df.iterrows():
-
-            title = highlight_keywords(
-                row["title"],
-                query,
-            )
-
-            description = (
-                highlight_keywords(
-                    row["description"],
-                    query,
-                )
-            )
-
-            track = highlight_keywords(
-                row["track"],
-                query,
-            )
-
-            score = (
-                f"{row['score']:.3f}"
-            )
-
-            with st.container(
-                border=True
-            ):
-
-                st.markdown(
-                    f"""
-<div style="
-    font-size:1.1rem;
-    font-weight:700;
-    margin-bottom:0.5rem;
-">
-{title}
-</div>
-""",
-                    unsafe_allow_html=True,
-                )
-
-                col1, col2 = st.columns(
-                    [3, 1]
-                )
-
-                with col1:
-
-                    st.markdown(
-                        f"""
-<div style="
-    color:#6b7280;
-    font-size:0.9rem;
-">
-🕒 {row['time']}
-</div>
-
-<div style="margin-top:0.5rem;">
-<b>Track:</b> {track}
-</div>
-""",
-                        unsafe_allow_html=True,
-                    )
-
-                with col2:
-
-                    st.metric(
-                        "Relevance score",
-                        score,
-                    )
-
-                with st.expander(
-                    "Description"
-                ):
-
-                    st.markdown(
-                        f"""
-<div style="line-height:1.6;">
-{description}
-</div>
-""",
-                        unsafe_allow_html=True,
-                    )
-
-
-# ============================================================
-# PERSONALIZED SCHEDULE
-# ============================================================
-
-if query:
-
-    st.divider()
-
-    st.header(
-        "Recommended Personalized Schedule"
-    )
-
-    if use_semantic_search:
-
-        ranked_sessions = (
-            run_semantic_search(
-                df=df,
-                query=query,
-                embeddings=embeddings,
-                top_k=TOP_K_SCHEDULE,
+        session_embeddings = get_embeddings(
+            tuple(
+                filtered_df["searchable_text"]
+                .fillna("")
+                .tolist()
             )
         )
 
-    else:
-
-        ranked_sessions = (
-            run_keyword_search(
-                df=df,
-                query=query,
-                top_k=TOP_K_SCHEDULE,
-            )
+        topics, topic_embeddings = compute_topic_embeddings(
+            model,
+            topics,
         )
 
-    recommendations = (
-        build_recommendations(
-            ranked_sessions.rename(
-                columns={
-                    "score":
-                    "semantic_score"
-                }
-            ),
-            top_per_slot=1,
+        ranked_df = rank_sessions_by_topic(
+            filtered_df,
+            session_embeddings,
+            topics,
+            topic_embeddings,
         )
-    )
 
-    schedule_df = (
-        build_best_schedule(
+        recommendations = build_recommendations(
+            ranked_df,
+            top_per_slot=TOP_PER_SLOT,
+        )
+
+        conflicts_df = detect_conflicts(
+            recommendations.head(TOP_N_RECOMMENDATIONS)
+        )
+
+        best_per_slot = build_best_schedule(
             recommendations
         )
+
+    st.caption(
+        f"Filtered sessions: {len(filtered_df)}"
     )
 
-    if len(schedule_df) == 0:
+    # st.subheader("Recommendation Timeline")
 
-        st.warning(
-            "No sessions available "
-            "for schedule generation."
-        )
+    # recommendation_fig = create_recommendation_timeline(
+    #     recommendations
+    # )
 
-    else:
+    # st.plotly_chart(
+    #     recommendation_fig,
+    #     use_container_width=True,
+    # )
 
-        timeline_fig = (
-            create_personal_schedule_timeline(
-                schedule_df
-            )
-        )
+    # st.subheader("Recommended Sessions")
 
-        st.plotly_chart(
-            timeline_fig,
-            use_container_width=True,
-        )
+    # st.dataframe(
+    #     recommendations[
+    #         [
+    #             "nid",
+    #             "title",
+    #             "day",
+    #             "timeslot",
+    #             "interest_topic",
+    #             "semantic_score",
+    #         ]
+    #     ],
+    #     use_container_width=True,
+    #     hide_index=True,
+    # )
 
-        schedule_display = (
-            schedule_df[
-                [
-                    "day",
-                    "starts_pst",
-                    "ends_pst",
-                    "title",
-                    "track",
-                    "semantic_score",
-                ]
+    st.subheader("Personalized Schedule")
+
+    personal_schedule_fig = create_personal_schedule_timeline(
+        best_per_slot
+    )
+
+    st.plotly_chart(
+        personal_schedule_fig,
+        use_container_width=True,
+    )
+
+    st.subheader("Recommended Sessions")
+
+    st.dataframe(
+        best_per_slot[
+            [
+                "nid",
+                "title",
+                "day",
+                "timeslot",
+                "interest_topic",
+                "semantic_score",
             ]
-            .copy()
-        )
+        ],
+        use_container_width=True,
+        hide_index=True,
+    )
 
-        schedule_display[
-            "start_time"
-        ] = (
-            schedule_display["starts_pst"]
-            .dt.strftime("%H:%M")
-        )
+else:
 
-        schedule_display[
-            "end_time"
-        ] = (
-            schedule_display["ends_pst"]
-            .dt.strftime("%H:%M")
-        )
-
-        schedule_display = (
-            schedule_display[
-                [
-                    "day",
-                    "start_time",
-                    "end_time",
-                    "title",
-                    "track",
-                    "semantic_score",
-                ]
-            ]
-        )
-
-        st.dataframe(
-            schedule_display,
-            use_container_width=True,
-            hide_index=True,
-        )
+    st.info(
+        "Enter one or more topics of interest to generate recommendations."
+    )

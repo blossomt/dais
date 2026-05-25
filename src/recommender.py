@@ -14,9 +14,14 @@ MODEL_NAME = "all-MiniLM-L6-v2"
 # MODEL
 # ============================================================
 
-def load_model():
+def load_model(cache_folder=None):
 
-    return SentenceTransformer(MODEL_NAME)
+    kwargs = {}
+
+    if cache_folder is not None:
+        kwargs["cache_folder"] = str(cache_folder)
+
+    return SentenceTransformer(MODEL_NAME, **kwargs)
 
 
 # ============================================================
@@ -144,10 +149,30 @@ def rank_sessions_by_topic(
 def build_recommendations(
     ranked_df: pd.DataFrame,
     top_per_slot: int = 3,
+    top_per_topic: int | None = 5,
 ) -> pd.DataFrame:
 
+    candidates = ranked_df.copy()
+
+    if (
+        top_per_topic is not None
+        and "interest_topic" in candidates.columns
+        and "semantic_score" in candidates.columns
+    ):
+
+        candidates = (
+            candidates
+            .sort_values(
+                "semantic_score",
+                ascending=False,
+            )
+            .groupby("interest_topic")
+            .head(top_per_topic)
+            .copy()
+        )
+
     recommendations = (
-        ranked_df
+        candidates
          .sort_values(
              "semantic_score",
             ascending=False,
@@ -185,10 +210,10 @@ def build_best_schedule(
          .groupby(
              [
                  "starts_pst",
-                 "ends_pst",
              ]
          )
          .head(1)
+         .sort_values("starts_pst")
          .copy()
       )
 

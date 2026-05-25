@@ -110,9 +110,12 @@ def apply_filters(
 
         filtered = filtered[
             filtered["level"].apply(
-                lambda x: any(
-                    level in x
-                    for level in include_levels
+                lambda x: (
+                    isinstance(x, str)
+                    and any(
+                        level in x
+                        for level in include_levels
+                    )
                 )
             )
         ]
@@ -121,9 +124,12 @@ def apply_filters(
 
         filtered = filtered[
             ~filtered["type"].apply(
-                lambda x: any(
-                    t in x
-                    for t in exclude_types
+                lambda x: (
+                    isinstance(x, str)
+                    and any(
+                        t in x
+                        for t in exclude_types
+                    )
                 )
             )
         ]
