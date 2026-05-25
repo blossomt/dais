@@ -12,7 +12,6 @@ from src.recommender import (
     build_recommendations,
     compute_session_embeddings,
     compute_topic_embeddings,
-    detect_conflicts,
     load_model,
     rank_sessions_by_topic,
 )
@@ -138,32 +137,6 @@ recommendations = build_recommendations(
     ranked_df,
     top_per_slot=3,
 )
-
-
-# ============================================================
-# CONFLICTS
-# ============================================================
-
-conflicts_df = detect_conflicts(
-    recommendations.head(
-        TOP_N_RECOMMENDATIONS
-     )
-)
-
-# print("\nPotential conflicts:\n")
-
-# if len(conflicts_df) > 0:
-
-#     print(
-#         conflicts_df.to_string(
-#             index=False
-#          )
-#      )
-
-# else:
-
-#     print("No overlaps found")
-
 
 # ============================================================
 # BEST SCHEDULE

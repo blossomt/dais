@@ -22,7 +22,6 @@ from src.recommender import (  # noqa: E402
     build_recommendations,
     compute_session_embeddings,
     compute_topic_embeddings,
-    detect_conflicts,
     load_model,
     rank_sessions_by_topic,
 )
@@ -209,10 +208,6 @@ if topics:
             top_per_slot=TOP_PER_SLOT,
         )
 
-        conflicts_df = detect_conflicts(
-            recommendations.head(TOP_N_RECOMMENDATIONS)
-        )
-
         best_per_slot = build_best_schedule(
             recommendations
         )
@@ -220,34 +215,6 @@ if topics:
     st.caption(
         f"Filtered sessions: {len(filtered_df)}"
     )
-
-    # st.subheader("Recommendation Timeline")
-
-    # recommendation_fig = create_recommendation_timeline(
-    #     recommendations
-    # )
-
-    # st.plotly_chart(
-    #     recommendation_fig,
-    #     use_container_width=True,
-    # )
-
-    # st.subheader("Recommended Sessions")
-
-    # st.dataframe(
-    #     recommendations[
-    #         [
-    #             "nid",
-    #             "title",
-    #             "day",
-    #             "timeslot",
-    #             "interest_topic",
-    #             "semantic_score",
-    #         ]
-    #     ],
-    #     use_container_width=True,
-    #     hide_index=True,
-    # )
 
     st.subheader("Personalized Schedule")
 
