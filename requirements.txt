@@ -1,9 +1,7 @@
 pandas
 plotly
-sentence_transformers
 bs4
 scikit-learn
 numpy
 streamlit
 pip-system-certs
-torchvision

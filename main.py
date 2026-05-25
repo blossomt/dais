@@ -10,9 +10,6 @@ from src.agenda_parser import (
 from src.recommender import (
     build_best_schedule,
     build_recommendations,
-    compute_session_embeddings,
-    compute_topic_embeddings,
-    load_model,
     rank_sessions_by_topic,
 )
 
@@ -32,15 +29,9 @@ AGENDA_PATH = "data/agenda.json"
 OUTPUT_DIR = Path("output")
 
 INTEREST_TOPICS = [
-     "geospatial analytics",
-     "industry use cases",
-     "supply chain planning",
-     "transport analytics",
-     "urban planning",
-     "data warehousing for analytics",
-     "deploying data pipelines to production",
-     "data lineage and observability",
-     "developer experience",
+    "geospatial spatial sql",
+    "deploying lakebase databricks apps in production",
+    "secure data sharing with unity catalog"
 ]
 
 INCLUDE_LEVELS = [
@@ -50,8 +41,6 @@ INCLUDE_LEVELS = [
 ]
 
 EXCLUDE_TYPES = []
-
-TOP_N_RECOMMENDATIONS = 15
 
 
 # ============================================================
@@ -91,41 +80,12 @@ print(
 
 
 # ============================================================
-# EMBEDDINGS
-# ============================================================
-
-print("Loading embedding model...")
-
-model = load_model()
-
-print("Computing session embeddings...")
-
-session_embeddings = (
-    compute_session_embeddings(
-        model,
-        filtered_df,
-     )
-)
-
-print("Computing topic embeddings...")
-
-topics, topic_embeddings = compute_topic_embeddings(
-    model,
-    INTEREST_TOPICS,
-)
-
-print(f"Matched against {len(topics)} topics: {', '.join(topics)}")
-
-
-# ============================================================
 # RANKING (per-topic)
 # ============================================================
 
 ranked_df = rank_sessions_by_topic(
     filtered_df,
-    session_embeddings,
-    topics,
-    topic_embeddings,
+    INTEREST_TOPICS,
 )
 
 

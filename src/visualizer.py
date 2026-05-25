@@ -112,7 +112,7 @@ def create_personal_schedule_timeline(
             "day": False,
             "semantic_score": False,
         },
-        opacity=0.7,
+        opacity=0.8,
     )
 
     fig.update_traces(
@@ -131,10 +131,32 @@ def create_personal_schedule_timeline(
         categoryarray=DAY_ORDER,
     )
 
+    # Add vertical gridlines at 30-minute intervals
+    min_time = viz_df["viz_start"].min()
+    max_time = viz_df["viz_end"].max()
+
+    current_time = min_time.replace(minute=0 if min_time.minute < 30 else 30, second=0, microsecond=0)
+    if current_time < min_time:
+        current_time += pd.Timedelta(minutes=30)
+
+    while current_time <= max_time:
+        fig.add_vline(
+            x=current_time,
+            line_color="lightgray",
+            opacity=0.5,
+            layer="below",
+        )
+        current_time += pd.Timedelta(minutes=30)
+
+    fig.update_xaxes(
+        dtick=30 * 60 * 1000,
+        tickformat="%H:%M",
+        ticklabelmode="period",
+    )
+
     fig.update_layout(
         title="Optimized Personal Schedule",
         height=900,
-        bargap=0.8,
         margin={
             "l": 80,
             "r": 80,

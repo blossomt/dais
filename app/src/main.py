@@ -1,10 +1,8 @@
 # app/src/main.py
 
 from pathlib import Path
-import hashlib
 import sys
 
-import numpy as np
 import re
 
 import pandas as pd
@@ -20,15 +18,11 @@ from src.agenda_parser import apply_filters  # noqa: E402
 from src.recommender import (  # noqa: E402
     build_best_schedule,
     build_recommendations,
-    compute_session_embeddings,
-    compute_topic_embeddings,
-    load_model,
     rank_sessions_by_topic,
 )
 
 from src.visualizer import (  # noqa: E402
     create_personal_schedule_timeline,
-    create_recommendation_timeline,
 )
 
 # ============================================================
@@ -37,12 +31,8 @@ from src.visualizer import (  # noqa: E402
 
 DATA_PATH = Path("data/agenda.csv")
 
-CACHE_DIR = REPO_ROOT / ".cache"
-MODEL_CACHE_DIR = CACHE_DIR / "models"
-EMBEDDINGS_CACHE_DIR = CACHE_DIR / "embeddings"
-
-TOP_PER_SLOT = 3
 TOP_N_RECOMMENDATIONS = 15
+MIN_SEMANTIC_SCORE = 0.4
 
 INCLUDE_LEVELS = [
     "Beginner",
@@ -50,12 +40,14 @@ INCLUDE_LEVELS = [
     "Advanced",
 ]
 
-EXCLUDE_TYPES = []
+EXCLUDE_TYPES = [
+    # "Paid Training"
+]
 
 DEFAULT_INTEREST_TOPICS = [
-    "geospatial analytics",
-    "deploying lakebase databricks apps",
-    "unity catalog data sharing"
+    "geospatial spatial sql",
+    "deploying lakebase databricks apps in production",
+    "secure data sharing with unity catalog"
 ]
 
 
@@ -97,48 +89,6 @@ def load_data() -> pd.DataFrame:
 
 
 # ============================================================
-# MODEL + EMBEDDINGS
-# ============================================================
-
-@st.cache_resource
-def get_model():
-
-    MODEL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-
-    return load_model(cache_folder=MODEL_CACHE_DIR)
-
-
-@st.cache_resource
-def get_embeddings(
-    searchable_texts: tuple,
-):
-
-    EMBEDDINGS_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-
-    texts_hash = hashlib.md5(
-        "\n".join(searchable_texts).encode()
-    ).hexdigest()
-
-    cache_file = EMBEDDINGS_CACHE_DIR / f"{texts_hash}.npy"
-
-    if cache_file.exists():
-        return np.load(str(cache_file))
-
-    model = get_model()
-
-    embeddings = compute_session_embeddings(
-        model=model,
-        df=pd.DataFrame({
-            "searchable_text": searchable_texts
-        }),
-    )
-
-    np.save(str(cache_file), embeddings)
-
-    return embeddings
-
-
-# ============================================================
 # STREAMLIT PAGE
 # ============================================================
 
@@ -156,6 +106,24 @@ st.markdown(
 Generate recommendations and a personal schedule
 using topic-based semantic ranking.
 """
+)
+
+st.sidebar.header("Recommendation Controls")
+
+top_n_recommendations = st.sidebar.slider(
+    "Top recommended sessions",
+    min_value=1,
+    max_value=100,
+    value=TOP_N_RECOMMENDATIONS,
+    step=1,
+)
+
+min_semantic_score = st.sidebar.slider(
+    "Minimum semantic score",
+    min_value=0.0,
+    max_value=1.0,
+    value=MIN_SEMANTIC_SCORE,
+    step=0.05,
 )
 
 topics_input = st.text_area(
@@ -181,31 +149,15 @@ if topics:
             exclude_types=EXCLUDE_TYPES,
         )
 
-        model = get_model()
-
-        session_embeddings = get_embeddings(
-            tuple(
-                filtered_df["searchable_text"]
-                .fillna("")
-                .tolist()
-            )
-        )
-
-        topics, topic_embeddings = compute_topic_embeddings(
-            model,
-            topics,
-        )
-
         ranked_df = rank_sessions_by_topic(
             filtered_df,
-            session_embeddings,
             topics,
-            topic_embeddings,
         )
 
         recommendations = build_recommendations(
             ranked_df,
-            top_per_slot=TOP_PER_SLOT,
+            top_per_topic=top_n_recommendations,
+            min_semantic_score=min_semantic_score,
         )
 
         best_per_slot = build_best_schedule(
@@ -230,12 +182,12 @@ if topics:
     st.subheader("Recommended Sessions")
 
     st.dataframe(
-        best_per_slot[
+        best_per_slot.head(top_n_recommendations)[
             [
                 "nid",
-                "title",
-                "day",
                 "timeslot",
+                "title",
+                "description",
                 "interest_topic",
                 "semantic_score",
             ]

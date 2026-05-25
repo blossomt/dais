@@ -4,13 +4,13 @@ A machine learning-powered tool to personalize your Databricks conference schedu
 
 ## Overview
 
-This project uses **sentence transformers** and semantic similarity to analyze conference sessions and recommend the most relevant talks for your interests. It parses the conference agenda, embeds sessions based on title, description, and metadata, and ranks them against your interest topics to create a personalized schedule.
+This project parses the conference agenda and ranks sessions with a **rule-based NLP recommender**. It tokenizes session text and interest topics, removes stop words, weights rarer terms with IDF, and scores each session by weighted keyword overlap. The pipeline then filters and deconflicts results to produce a practical personal schedule.
 
 ## Features
 
-- **Semantic Session Matching**: Uses embedding models to understand session content beyond keyword matching
-- **Topic-Based Recommendations**: Recommends the top sessions for each of your interest areas
-- **Conflict Resolution**: Automatically selects the best session per time slot across all topics
+- **Lexical Relevance Scoring**: Uses tokenization + stop-word removal + IDF-weighted overlap scoring
+- **Best Topic Per Session**: Keeps each session only once using its highest-scoring topic match
+- **Score-Based Deconflicting**: Resolves time overlaps by keeping the higher `semantic_score` session
 - **Interactive Visualizations**: Generated Plotly timelines showing your recommended schedule
 - **Flexible Filtering**: Filter sessions by level (Beginner/Intermediate/Advanced) and type
 - **CSV Exports**: Export recommended sessions and your best schedule to CSV
@@ -48,7 +48,7 @@ python main.py
 
 This will:
 - Parse the agenda from `data/agenda.json`
-- Compute embeddings for all sessions
+- Compute lexical relevance for all sessions
 - Rank sessions by your interest topics (defined in `main.py`)
 - Generate visualizations and export results to `output/`
 
@@ -71,22 +71,45 @@ Edit `main.py` to customize:
 
 ```python
 INTEREST_TOPICS = [
-    "geospatial analytics",
-    "industry use cases",
-    "supply chain planning",
-    "transport analytics",
-    "urban planning",
+    "geospatial spatial sql",
+    "deploying lakebase databricks apps in production",
+    "secure data sharing with unity catalog"
     # ... add your topics
 ]
-
-INCLUDE_LEVELS = [
-    "Beginner",
-    "Intermediate",
-    "Advanced",
-]
-
-TOP_N_RECOMMENDATIONS = 15  # Sessions to recommend per topic
 ```
+
+## Recommendation Model
+
+The recommender in `src/recommender.py` follows this flow:
+
+1. **Tokenize + normalize text**
+    - Session `searchable_text` and input topics are lowercased and tokenized.
+    - Common English words and dataset-specific filler words are removed using `STOP_WORDS`.
+
+2. **Compute IDF weights**
+    - IDF is computed over session texts + topic texts:
+    - `IDF(term) = log((1 + total_docs) / (1 + doc_frequency)) + 1.0`
+
+3. **Score topic-session relevance**
+    - Each topic is scored against each session using weighted overlap:
+    - `semantic_score = Σ(matched_terms × IDF) / Σ(query_terms × IDF)`
+
+4. **Assign best topic per session**
+    - For each session, the pipeline keeps the single highest-scoring topic assignment.
+
+5. **Filter + cap recommendations**
+    - Applies `min_semantic_score` (default `0.4`).
+    - Keeps top `top_per_topic` sessions per topic.
+
+6. **Build final schedule with overlap handling**
+    - Sessions are sorted chronologically by day.
+    - When two sessions overlap, the one with higher `semantic_score` is kept.
+
+### Runtime Controls (Streamlit)
+- `Top recommended sessions` (`top_per_topic` / display cap)
+- `Minimum semantic score` (`min_semantic_score`)
+
+These controls are exposed in the app sidebar and passed into `build_recommendations()`.
 
 ## Tips for Better Recommendations
 
