@@ -1,0 +1,5 @@
+pandas
+plotly
+sentence_transformers
+bs4
+scikit-learn
